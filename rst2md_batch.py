@@ -29,6 +29,9 @@ WRAPPER_TAGS = (
 )
 
 
+FENCE_RE = re.compile(r"^\s*(```|~~~)")
+
+
 def convert_rst_to_md(rst_text: str) -> str:
     result = subprocess.run(
         ["pandoc", "-f", "rst", "-t", "gfm", "--wrap=none"],
@@ -42,8 +45,8 @@ def convert_rst_to_md(rst_text: str) -> str:
     return result.stdout
 
 
-def clean_markdown(md: str) -> str:
-    text = md
+def clean_markdown_segment(text: str) -> str:
+    """Clean generated Markdown outside fenced code blocks."""
 
     # ── 移除包装性 HTML 标签 ──
     for tag in WRAPPER_TAGS:
@@ -57,6 +60,11 @@ def clean_markdown(md: str) -> str:
     text = re.sub(r":doc:`([^`]+)`", r"\1", text)
     text = re.sub(r":math:`([^`]+)`", r"$\1$", text)
     text = re.sub(r":(\w+):`([^`]+)`", r"`\2`", text)
+
+    # ── Godot classref 残留：保留展示文本，移除内部锚点 ──
+    text = re.sub(r"\s*`🔗<[^`>]+>`", "", text)
+    text = re.sub(r"`([^`\n<>]+)<[^`\n<>]+>`", r"`\1`", text)
+    text = text.replace(r"\<", "<")
 
     # ── RST 指令行 ──
     text = re.sub(r"\.\.\s+(\w+)::", r"**\1:**", text)
@@ -73,6 +81,7 @@ def clean_markdown(md: str) -> str:
     text = re.sub(r"^\*{4,}\s*$", "", text, flags=re.MULTILINE)
     text = re.sub(r"^\^{4,}\s*$", "", text, flags=re.MULTILINE)
     text = re.sub(r"^~{4,}\s*$", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*classref[-\w]*\s*$", "", text, flags=re.MULTILINE)
 
     # 表格分隔线 + 空数据行：
     # 匹配一行中"只有 |, -, :, 空格"的情况（至少含一个 | 或 -）
@@ -84,9 +93,56 @@ def clean_markdown(md: str) -> str:
 
     # ── 去行尾空白 ──
     lines = [line.rstrip() for line in text.split("\n")]
+    return "\n".join(lines)
+
+
+def clean_markdown(md: str) -> str:
+    segments = []
+    buffer = []
+    in_code = False
+
+    for line in md.splitlines(keepends=True):
+        if FENCE_RE.match(line):
+            if in_code:
+                buffer.append(line)
+                segments.append(("code", "".join(buffer)))
+                buffer = []
+                in_code = False
+            else:
+                if buffer:
+                    segments.append(("text", "".join(buffer)))
+                    buffer = []
+                buffer.append(line)
+                in_code = True
+            continue
+
+        if not in_code and (line.startswith("    ") or line.startswith("\t")):
+            if buffer:
+                segments.append(("text", "".join(buffer)))
+                buffer = []
+            segments.append(("code", line))
+            continue
+
+        buffer.append(line)
+
+    if buffer:
+        segments.append(("code" if in_code else "text", "".join(buffer)))
+
+    text = "".join(
+        segment if kind == "code" else clean_markdown_segment(segment)
+        for kind, segment in segments
+    )
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    lines = [line.rstrip() for line in text.split("\n")]
     text = "\n".join(lines)
 
-    return text.strip()
+    # 只删除首尾空白行，不触碰内容行的缩进。
+    lines = text.split("\n")
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines)
 
 
 def process_one(rst_path: str, out_path: str) -> tuple[str, bool, str]:
