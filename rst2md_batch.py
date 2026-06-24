@@ -2,9 +2,11 @@
 """
 批量 RST → MD 转换。递归扫描目录下所有 .rst 文件。
 
+https://github.com/godotengine/godot-docs.git stable
+
 用法:
     uv run python rst2md_batch.py
-    uv run python rst2md_batch.py -i godot-docs -o godot-docs-md
+    uv run python rst2md_batch.py -i ../godot-docs -o ../rpg_demo/godot-docs-md
     uv run python rst2md_batch.py --dry-run
     uv run python rst2md_batch.py -w 8
 """
@@ -103,12 +105,12 @@ def main():
     parser = argparse.ArgumentParser(description="批量 .rst → .md 转换")
     parser.add_argument(
         "-i", "--input",
-        default="godot-docs",
+        default="../godot-docs",
         help="输入目录 (默认: godot-docs)",
     )
     parser.add_argument(
         "-o", "--output",
-        default="godot-docs-md",
+        default="../rpg_demo/godot-docs-md",
         help="输出目录 (默认: godot-docs-md)",
     )
     parser.add_argument(
@@ -149,7 +151,7 @@ def main():
         if rel.stem in ["404", "index"]:
             continue
         rst_files.append(rst)
-    
+
     rst_files = sorted(rst_files)
     total = len(rst_files)
 
