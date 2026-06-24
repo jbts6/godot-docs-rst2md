@@ -456,7 +456,7 @@ rtk summary uv run python rag_cli.py build --docs ../rpg_demo/godot-docs-md --db
 rtk proxy uv run python rag_cli.py search "StringName.is_valid_filename" --db rag/godot_docs.sqlite --limit 5
 ```
 
-`search` 输出格式必须包含：
+`search` 默认文本输出格式必须包含：
 
 ```text
 score:
@@ -466,6 +466,23 @@ symbol:
 heading:
 breadcrumb:
 text:
+```
+
+`search --json` 必须输出 JSON array。每个元素必须包含：
+
+```json
+{
+  "score": 132.5,
+  "path": "classes/class_stringname.md",
+  "start_line": 341,
+  "end_line": 347,
+  "doc_type": "class",
+  "chunk_type": "method",
+  "symbol": "StringName.is_valid_filename",
+  "heading": "Methods",
+  "breadcrumb": "classes > StringName > is_valid_filename",
+  "text": "`bool` **is_valid_filename**() ..."
+}
 ```
 
 运行：
@@ -511,6 +528,7 @@ rtk proxy uv run python rag_cli.py search "StringName.is_valid_filename" --db ra
 rtk proxy uv run python rag_cli.py search "AABB position" --db rag/godot_docs.sqlite --limit 3
 rtk proxy uv run python rag_cli.py search "2D pathfinding grid" --db rag/godot_docs.sqlite --limit 5
 rtk proxy uv run python rag_cli.py search "C# Variant" --db rag/godot_docs.sqlite --limit 5
+rtk proxy uv run python rag_cli.py search "StringName.is_valid_filename" --db rag/godot_docs.sqlite --limit 3 --json
 ```
 
 验收：
@@ -519,6 +537,38 @@ rtk proxy uv run python rag_cli.py search "C# Variant" --db rag/godot_docs.sqlit
 - `AABB position` 前 3 条包含 `classes/class_aabb.md`。
 - `2D pathfinding grid` 前 5 条包含 `classes/class_astargrid2d.md` 或相关 tutorial。
 - `C# Variant` 前 5 条包含 `tutorials/scripting/c_sharp/c_sharp_variant.md`。
+- `--json` 输出可以被 `json.loads()` 解析，且第一条包含 `path`、`start_line`、`end_line`、`text`。
+
+## Task 6.5：写入 Agent 调用说明
+
+在项目 README 或后续 Agent 配置中加入以下系统提示词。若当前仓库没有 README，只保留在 `docs/godot-docs-hybrid-rag-scheme.md` 中，不额外创建 README。
+
+```text
+回答 Godot 文档相关问题前，必须先调用本地 Godot Docs RAG。
+
+调用规则：
+- 如果用户提到类名、方法名、属性名，优先用精确符号查询。
+- 如果用户问概念、教程、做法，用自然语言查询。
+- 如果用户要求代码示例，同时查询相关 API 和相关教程。
+- 如果第一次结果不足，最多再生成 2 个查询变体。
+- 每次最多读取 8 个 chunk。
+- 回答必须基于检索结果，不要凭记忆编造 API。
+- 回答中标注来源路径和行号。
+```
+
+Agent 调用 CLI 时使用：
+
+```bash
+rtk proxy uv run python rag_cli.py search "StringName.is_valid_filename" --db rag/godot_docs.sqlite --limit 5 --json
+```
+
+长期集成时，把 CLI 包装成 MCP tool：
+
+```text
+godot_docs_search(query: string, limit?: number) -> SearchResult[]
+```
+
+MCP tool 必须复用 `rag.store.search_database()` 或 `rag.search` 中的统一检索入口，不得重新实现排序。
 
 ## Task 7：最终质量检查
 

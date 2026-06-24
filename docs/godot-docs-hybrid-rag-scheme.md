@@ -28,6 +28,7 @@
 - SQLite 数据库：`./rag/godot_docs.sqlite`
 - 可执行 CLI：`uv run python rag_cli.py build`
 - 查询 CLI：`uv run python rag_cli.py search "Vector3 normalized"`
+- Agent JSON 查询：`uv run python rag_cli.py search "Vector3 normalized" --json`
 
 ## 第一版范围
 
@@ -270,6 +271,72 @@ Returns `true` if this string is a valid file name...
 ```
 
 AI 读取时只把 top 5-10 条结果放进上下文。
+
+## AI Agent 调用协议
+
+AI Agent 不直接读取整批 Markdown 文档。回答 Godot 文档相关问题前，Agent 必须先调用本地 RAG，并且只把命中的 chunk 放进上下文。
+
+### CLI 调用
+
+第一版使用 CLI 作为 Agent 集成面：
+
+```bash
+rtk proxy uv run python rag_cli.py search "StringName.is_valid_filename" --db rag/godot_docs.sqlite --limit 5 --json
+```
+
+`--json` 输出必须是 JSON array，每个元素包含：
+
+```json
+{
+  "score": 132.5,
+  "path": "classes/class_stringname.md",
+  "start_line": 341,
+  "end_line": 347,
+  "doc_type": "class",
+  "chunk_type": "method",
+  "symbol": "StringName.is_valid_filename",
+  "heading": "Methods",
+  "breadcrumb": "classes > StringName > is_valid_filename",
+  "text": "`bool` **is_valid_filename**() ..."
+}
+```
+
+### Agent 查询策略
+
+Agent 收到用户问题后按以下顺序行动：
+
+1. 判断问题是否包含 API 符号、类名、方法名、属性名。
+2. 如果是精确 API 问题，优先使用符号查询，例如 `StringName.is_valid_filename`。
+3. 如果是概念或教程问题，使用自然语言查询，例如 `2D pathfinding grid`。
+4. 如果是代码生成问题，至少执行一次 API 查询和一次教程/概念查询。
+5. 第一次结果不足时，最多生成 2 个查询变体。
+6. 每次最多读取 8 个 chunk。
+7. 回答必须基于检索结果，并标注来源路径和行号。
+
+### Agent 系统提示词
+
+```text
+回答 Godot 文档相关问题前，必须先调用本地 Godot Docs RAG。
+
+调用规则：
+- 如果用户提到类名、方法名、属性名，优先用精确符号查询。
+- 如果用户问概念、教程、做法，用自然语言查询。
+- 如果用户要求代码示例，同时查询相关 API 和相关教程。
+- 如果第一次结果不足，最多再生成 2 个查询变体。
+- 每次最多读取 8 个 chunk。
+- 回答必须基于检索结果，不要凭记忆编造 API。
+- 回答中标注来源路径和行号。
+```
+
+### MCP 集成形态
+
+CLI 稳定后，将它包装为 MCP tool：
+
+```text
+godot_docs_search(query: string, limit?: number) -> SearchResult[]
+```
+
+MCP tool 内部调用同一套 `search_database()`，不得另写一套排序逻辑。这样 CLI、测试、MCP 使用同一个检索核心，避免不同入口结果不一致。
 
 ## 验收标准
 
