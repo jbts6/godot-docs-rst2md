@@ -1,6 +1,9 @@
 [project]
-name = "godot-docs-rst2md"
-version = "0.1.0"
-description = "Convert godot-docs RST sources to Markdown (GFM) using pandoc"
+name = "godot-docs-tools"
+version = "0.2.0"
+description = "Tools for Godot docs: RST→MD converter and Hybrid RAG search"
 requires-python = ">=3.13"
 dependencies = []
+
+[project.scripts]
+godot-rag = "rag.cli:main"
